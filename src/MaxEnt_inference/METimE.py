@@ -68,7 +68,6 @@ def get_empirical_RAD(file, census):
 
     return rad
 
-
 def partition_function(lambdas, func_vals):
     lambdas = np.asarray(lambdas).reshape(-1, 1, 1)
     exponent_matrix = np.sum(-lambdas * func_vals, axis=0)
@@ -258,17 +257,17 @@ def run_optimization(lambdas, macro_var, X, func_vals, maxiter=1000, optimizer='
     lambdas = lambdas / scales
 
     if len(lambdas) == 4:
-        bounds = [(0, 18) / scales[0],
-                  (0, 18) / scales[1],
+        bounds = [(-18, 18) / scales[0],                                                                              # TODO: changed this to -18 for METE simulated BCI
+                  (-18, 18) / scales[1],
                   bounds_dn / scales[2],
                   bounds_de / scales[3]]
         weights = [1, 1, 0.01, 0.01]
     elif len(lambdas) == 2:
-        bounds = [(0, 18) / scales[0],
-                  (0, 18) / scales[1]]
+        bounds = [(-18, 18) / scales[0],                                                                              # TODO: changed this to -18 for METE simulated BCI
+                  (-18, 18) / scales[1]]
         weights = [1, 1]
     else:
-        bounds = [(0, 18) / scales[0]]
+        bounds = [(-18, 18) / scales[0]]
         weights = [1]
 
     # Collect all constraints

@@ -1,5 +1,6 @@
 import csv
 import os
+import gc
 import seaborn as sns
 import numpy as np
 import pandas as pd
@@ -344,8 +345,8 @@ def run_optimization(vars, macro_var, func_vals, slack_weight=1, maxiter=1e08):
         vars = vars / scales
 
         bounds = [
-            (0, 18) / scales[0],
-            (0, 18) / scales[1],
+            (-18, 18) / scales[0],
+            (-18, 18) / scales[1],
             bounds_dn / scales[2],
             bounds_de / scales[3]
         ]
@@ -361,19 +362,19 @@ def run_optimization(vars, macro_var, func_vals, slack_weight=1, maxiter=1e08):
         vars = vars / scales
 
         bounds = [
-            (0, 18) / scales[0],
-            (0, 18) / scales[1],
+            (-18, 18) / scales[0],
+            (-18, 18) / scales[1],
             bounds_dn / scales[2]
         ]
 
         # Collect all constraints
-        constraint_order = ['N/S', 'E/S', 'dN/S']
+        constraint_order = ['N/S', 'E/S', 'dN/S', 'dE/S']
 
     constraints = [{
         'type': 'eq',
         'fun': lambda vars, F_k=macro_var[name], idx=i:
         single_constraint(vars, func_vals, idx, F_k, scales)
-    } for i, name in enumerate(constraint_order[:2])]
+    } for i, name in enumerate(constraint_order[:2])]                                                                   # Only N/S and E/S are strict constraints
 
 
     result = minimize(penalized_entropy,
@@ -513,8 +514,8 @@ def plot_RADs(empirical_rad, METE_rad, METimE_rad, save_name, obs_label="Simulat
 
     # Plot with updated styles
     plt.plot(ranks, empirical_rad, 'o-', color=greyish, markersize=6, linewidth=2, label=obs_label)
-    #plt.plot(ranks, METE_rad, 's--', color=blueish, markersize=6, linewidth=2, label='METE')
-    #plt.plot(ranks, METimE_rad, '^--', color=redish, markersize=6, linewidth=2, label='METimE')
+    plt.plot(ranks, METE_rad, 's--', color=blueish, markersize=6, linewidth=2, label='METE')
+    plt.plot(ranks, METimE_rad, '^--', color=redish, markersize=6, linewidth=2, label='METimE')
 
     plt.xlabel("Rank", fontsize=16)
 
@@ -533,7 +534,7 @@ def plot_RADs(empirical_rad, METE_rad, METimE_rad, save_name, obs_label="Simulat
     plt.xticks(fontsize=14)
     plt.yticks(fontsize=14)
 
-    #plt.legend(fontsize=12)
+    plt.legend(fontsize=12)
     #plt.grid(True, linestyle='--', alpha=0.5)
     plt.tight_layout()
 
@@ -613,6 +614,46 @@ def add_row(data):
         # Write the data row
         writer.writerow(data)
 
+def add_row_results_list(data, plot):
+    filename = f"C:/Users/5605407/OneDrive - Universiteit Utrecht/Documents/PhD/Chapter_2/Results/eBCI/results.csv"
+    file_exists = os.path.isfile(filename)
+
+    columns = [
+    'quad',
+    'census',
+    'slack_weight',
+    'N/S',
+    'E/S',
+    'dN/S',
+    'dE/S',
+    'r2_dn',
+    'r2_de',
+    'METE_error_N/S',
+    'METE_error_E/S',
+    'METE_error_dN/S',
+    'METE_error_dE/S',
+    'METimE_error_N/S',
+    'METimE_error_E/S',
+    'METimE_error_dN/S',
+    'METimE_error_dE/S',
+    'METE_AIC',
+    'METE_MAE',
+    'METE_RMSE',
+    'METimE_AIC',
+    'METimE_MAE',
+    'METimE_RMSE'
+    ]
+
+    with open(filename, mode="a", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=columns)
+
+        # Write the header only if the file is new
+        if not file_exists:
+            writer.writeheader()
+
+        # Write the data row
+        writer.writerow(data)
+
 if __name__ == "__main__":
     # Use ext='' for full BCI, or ext='_quadrat_i' for quadrat i data
     for i in [1, 2, 3, 4, 5]:
@@ -624,15 +665,17 @@ if __name__ == "__main__":
         #plot_trajectories(input)
 
         # Compute polynomial coefficients
-        alphas, r2_dn, betas, r2_de, scaler = sindy(input)
-        functions = get_functions()
-        r2s = pd.DataFrame({'r2_dn': [r2_dn], 'r2_de': [r2_de]})
-        r2s.to_csv(f'empirical_BCI_r2_tf{ext}.csv', index=False)
-        alphas = alphas['Coefficient'].values
-        betas = betas['Coefficient'].values
+        best_r2_dn, best_alphas, best_betas = -np.inf, [], []
+        for lv_ratio in [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]:
+            alphas, r2_dn, betas, r2_de, scaler = sindy(input, lv_ratio=lv_ratio, outlier_removal=True)
+            if r2_dn > best_r2_dn:
+                best_r2_dn = r2_dn
+                best_alphas = alphas
+                best_betas = betas
 
-        # Create list to store results
-        results_list = []
+        alphas = best_alphas['Coefficient'].values
+        betas = best_betas['Coefficient'].values
+        functions = get_functions()
 
         for census in input['census'].unique():
             print(f"\n Census: {census} \n")
@@ -679,33 +722,32 @@ if __name__ == "__main__":
                 X,
                 func_vals[:2],
                 optimizer='trust-constr',
-                maxiter=5e5
+                maxiter=1e5
             )
             METE_lambdas = np.append(METE_lambdas, [0, 0])
             mete_constraint_errors = check_constraints(METE_lambdas, input_census, func_vals)
             METE_results, METE_rad = evaluate_model(METE_lambdas, X, func_vals, empirical_rad, mete_constraint_errors)
+            print(
+                f"AIC: {METE_results['AIC'].values[0]}, RMSE: {METE_results['RMSE'].values[0]}, MAE: {METE_results['MAE'].values[0]}")
             #METE_lambdas = np.append(METE_lambdas, [0, 0])
 
             #######################################
             #####           METimE            #####
             #######################################
             prev_best_MAE = np.inf
-            for w_exp in np.arange(-2, 2, 1, dtype=float):
-                for w_base in np.arange(1, 10, 2):
-                    w = w_base * 10 ** w_exp
-                    print(" ")
-                    print("----------METimE----------")
-                    METimE_lambdas = run_optimization(METE_lambdas, macro_var, func_vals, slack_weight=w, maxiter=5e5)
-                    print("Optimized lambdas: {}".format(METimE_lambdas[:4]))
-                    #print("Slack variables: {}".format(METimE_lambdas[4:]))
-                    metime_constraint_errors = check_constraints(METimE_lambdas, input_census, func_vals)
-                    METimE_results, METimE_rad = evaluate_model(METimE_lambdas, X, func_vals, empirical_rad, metime_constraint_errors)
-                    print(f"AIC: {METimE_results['AIC'].values[0]}, RMSE: {METimE_results['RMSE'].values[0]}, MAE: {METimE_results['MAE'].values[0]}")
+            for w in [100, 10, 1, 0.1, 0]:
+                print(" ")
+                print("----------METimE----------")
+                METimE_lambdas = run_optimization(METE_lambdas, macro_var, func_vals, slack_weight=w, maxiter=1e5)
+                print("Optimized lambdas: {}".format(METimE_lambdas[:4]))
+                metime_constraint_errors = check_constraints(METimE_lambdas, input_census, func_vals)
+                METimE_results, METimE_rad = evaluate_model(METimE_lambdas, X, func_vals, empirical_rad, metime_constraint_errors)
+                print(f"AIC: {METimE_results['AIC'].values[0]}, RMSE: {METimE_results['RMSE'].values[0]}, MAE: {METimE_results['MAE'].values[0]}")
 
-                    ##########################################
-                    #####           Save results         #####
-                    ##########################################
-                    results_list.append({
+                ##########################################
+                #####           Save results         #####
+                ##########################################
+                add_row_results_list({
                         'quad': ext,
                         'census': census,
                         'slack_weight': w,
@@ -731,19 +773,19 @@ if __name__ == "__main__":
                         'METimE_RMSE': METimE_results['RMSE'].values[0]
                     })
 
-                    add_row({
-                        "census": census,
-                        "quad": ext,
-                        "slack_weight": w,
-                        "AIC": METimE_results['AIC'].values[0],
-                        "RMSE": METimE_results['RMSE'].values[0],
-                        "MAE": METimE_results['MAE'].values[0],
-                        "entropy": -entropy(METimE_lambdas[:4], func_vals)
-                    })
+                    # add_row({
+                    #     "census": census,
+                    #     "quad": ext,
+                    #     "slack_weight": w,
+                    #     "AIC": METimE_results['AIC'].values[0],
+                    #     "RMSE": METimE_results['RMSE'].values[0],
+                    #     "MAE": METimE_results['MAE'].values[0],
+                    #     "entropy": -entropy(METimE_lambdas[:4], func_vals)
+                    # })
 
-                    if METimE_results['MAE'].values[0] < prev_best_MAE:
-                        plot_RADs(empirical_rad, METE_rad, METimE_rad, f'quad_{ext}_census_{census}', 'Empirical', weight={w}, use_log=True)
-                        prev_best_MAE = METimE_results['MAE'].values[0]
-
-        results_df = pd.DataFrame(results_list)
-        results_df.to_csv(f'empirical_BCI_df{ext}.csv', index=False)
+                if METimE_results['MAE'].values[0] < prev_best_MAE:
+                    plot_RADs(empirical_rad, METE_rad, METimE_rad, f'C:/Users/5605407/OneDrive - Universiteit Utrecht/Documents/PhD/Chapter_2/Results/eBCI/quad_{ext}_census_{census}.png', 'Empirical', weight={w}, use_log=True)
+                    prev_best_MAE = METimE_results['MAE'].values[0]
+            gc.collect()
+        # results_df = pd.DataFrame(results_list)
+        # results_df.to_csv(f'20_5_empirical_BCI_df{ext}.csv', index=False)
