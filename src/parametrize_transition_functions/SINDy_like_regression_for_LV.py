@@ -34,7 +34,7 @@ def do_polynomial_regression(df, lv_ratio=0.6):
         ])
 
     # Remove outliers
-    df = remove_outliers(df)
+    # df = remove_outliers(df)
 
     df['(n ** (1/2))'] = df['n'] ** (1 / 2)
     df['(n)'] = df['n']
@@ -133,13 +133,24 @@ def stepwise_sparse_regression(df_grouped, alpha=0.01):
 
         # Recalculate non-zero coefficients (without l1 norm regularization)
         mask = best_coef != 0
-        model = ElasticNetCV(l1_ratio=0.5, alphas=np.logspace(-3, 1, 50), fit_intercept=False)
-        model.fit(X_scaled[:, mask], y_obs)
-        coef_new = np.zeros_like(best_coef)
-        coef_new[mask] = model.coef_
-        best_coef = coef_new
-        y_pred = model.predict(X_scaled[:, mask])
-        r2 = r2_score(y_obs, y_pred)
+
+        best_r2, best_best_coef = -np.inf, []
+
+        for l1_ratio in [.1, .5, .7, .9, .95, .99, 1]:
+            model = ElasticNetCV(l1_ratio=l1_ratio, alphas=np.logspace(-3, 1, 50), fit_intercept=False)
+            model.fit(X_scaled[:, mask], y_obs)
+            coef_new = np.zeros_like(best_coef)
+            coef_new[mask] = model.coef_
+            best_coef = coef_new
+            y_pred = model.predict(X_scaled[:, mask])
+            r2 = r2_score(y_obs, y_pred)
+
+            if r2 > best_r2:
+                best_r2 = r2
+                best_best_coef = best_coef
+
+        best_coef = best_best_coef
+        r2 = best_r2
 
         # store results
         coef_df = pd.DataFrame({

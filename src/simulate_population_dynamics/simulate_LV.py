@@ -446,7 +446,7 @@ def three_groups_LV(model_func="food_web", T=50, var=0.0, iter=""):
     # scale up populations
     solutions = solutions * N
 
-    plot_solutions(solutions, tspan, model_func, iter)
+    #plot_solutions(solutions, tspan, model_func, iter)
     df = create_df(solutions)
 
     if var == 0.05:

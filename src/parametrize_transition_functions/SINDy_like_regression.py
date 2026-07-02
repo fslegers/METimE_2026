@@ -22,19 +22,20 @@ def remove_outliers(df):
 
     return df_clean
 
-def do_polynomial_regression(df, lv_ratio=0.6):
+def do_polynomial_regression(df, lv_ratio=0.6, outlier_removal=True):
     # Make base nonlinear transformations of e and n
     df = df.copy()
 
-    with open('variance simulated BCI.csv', mode='a', newline='') as file:
-        writer = csv.writer(file)
-        writer.writerow([
-            df['dn'].tolist(),
-            df['de'].tolist()
-        ])
+    # with open('variance simulated BCI.csv', mode='a', newline='') as file:
+    #     writer = csv.writer(file)
+    #     writer.writerow([
+    #         df['dn'].tolist(),
+    #         df['de'].tolist()
+    #     ])
 
     # Remove outliers
-    df = remove_outliers(df)
+    if outlier_removal:
+        df = remove_outliers(df)
 
     # print mean and variance in df['de']
     # Protect against zero/negative values for logs and inverses
@@ -101,7 +102,6 @@ def do_polynomial_regression(df, lv_ratio=0.6):
 
     # Run STLSQ
     coef_dn, r2_dn, coef_de, r2_de, scaler = stepwise_sparse_regression(df_grouped, targets, lv_ratio)
-    print(f"R2 dn: {r2_dn}, R2 de: {r2_de}")
 
     return coef_dn, r2_dn, coef_de, r2_de, scaler
 
@@ -129,7 +129,7 @@ def stepwise_sparse_regression(df, targets, alpha=0.01):
     feature_names = X.columns.tolist()
 
     # Standardize features
-    scaler = StandardScaler(with_mean=False) # TODO: think about this!
+    scaler = StandardScaler(with_mean=False)
     X_scaled = scaler.fit_transform(X)
 
     results = []
@@ -191,13 +191,26 @@ def stepwise_sparse_regression(df, targets, alpha=0.01):
         mask = best_coef != 0
 
         if np.any(mask):
-            model = ElasticNetCV(l1_ratio=0.5, alphas=np.logspace(-3, 1, 50), fit_intercept=False)
-            model.fit(X_scaled[:, mask], y_obs)
-            coef_new = np.zeros_like(best_coef)
-            coef_new[mask] = model.coef_
-            best_coef = coef_new
-            y_pred = model.predict(X_scaled[:, mask])
-            r2 = r2_score(y_obs, y_pred)
+
+            best_best_coef = []
+            best_r2 = -np.inf
+
+            for l1_ratio in [.1, .5, .7, .9, .95, .99, 1]:
+                model = ElasticNetCV(l1_ratio=l1_ratio, alphas=np.logspace(-3, 1, 50), fit_intercept=False)
+                model.fit(X_scaled[:, mask], y_obs)
+                coef_new = np.zeros_like(best_coef)
+                coef_new[mask] = model.coef_
+                best_coef = coef_new
+                y_pred = model.predict(X_scaled[:, mask])
+                r2 = r2_score(y_obs, y_pred)
+
+                if r2 > best_r2:
+                    best_r2 = r2
+                    best_best_coef = best_coef
+
+            r2 = best_r2
+            best_coef = best_best_coef
+
         else:
             r2 = 0.0
 
